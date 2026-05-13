@@ -1,0 +1,130 @@
+{
+  "incident": {
+    "incident_id": "INC-2026-0042",
+    "title": "Production Database Credential Leak via Misconfigured S3 Bucket",
+    "leak_type": "security",
+    "severity": "critical",
+    "detected_at": "2026-05-10 14:23",
+    "reported_by": "Alice Chen – Security Operations",
+    "location": "AWS S3 bucket: prod-config-backup / RDS cluster: prod-db-01",
+    "description": "A publicly accessible S3 bucket was found to contain database credentials in plaintext configuration files. The bucket had been misconfigured during a routine infrastructure migration 11 days prior.",
+    "affected_systems": [
+      "prod-db-01 (PostgreSQL RDS)",
+      "api-service-v2",
+      "reporting-service",
+      "S3 bucket: prod-config-backup"
+    ]
+  },
+  "executive_summary": "On 2026-05-10, the Security Operations team detected a critical data leak in which production database credentials were exposed in a publicly readable S3 bucket for approximately 11 days. The misconfiguration was introduced during an infrastructure migration on 2026-04-29. Credentials have been rotated and bucket permissions have been corrected. An investigation into potential unauthorized access is ongoing.",
+  "timeline": [
+    {
+      "timestamp": "2026-04-29 09:15",
+      "event": "Infrastructure migration performed; S3 bucket ACL inadvertently set to public-read",
+      "actor": "DevOps Team"
+    },
+    {
+      "timestamp": "2026-05-10 14:23",
+      "event": "Security scanner flagged public-read ACL on prod-config-backup bucket",
+      "actor": "Automated Security Scanner"
+    },
+    {
+      "timestamp": "2026-05-10 14:45",
+      "event": "Security Operations notified; incident declared and response initiated",
+      "actor": "Alice Chen"
+    },
+    {
+      "timestamp": "2026-05-10 15:10",
+      "event": "S3 bucket ACL corrected to private",
+      "actor": "Bob Martinez – DevOps"
+    },
+    {
+      "timestamp": "2026-05-10 15:30",
+      "event": "All database credentials rotated; API keys revoked and re-issued",
+      "actor": "Security Operations"
+    },
+    {
+      "timestamp": "2026-05-10 17:00",
+      "event": "S3 access logs pulled and forwarded to SIEM for analysis",
+      "actor": "Alice Chen"
+    },
+    {
+      "timestamp": "2026-05-11 10:00",
+      "event": "Forensic review of access logs completed; 3 unrecognised IPs identified",
+      "actor": "Security Operations"
+    }
+  ],
+  "root_cause": "During the infrastructure migration on 2026-04-29, a Terraform module upgrade changed the default ACL policy for newly created S3 buckets. The operator did not notice that the `acl` parameter had been deprecated in favour of explicit bucket policies in the new module version, resulting in the bucket defaulting to public-read. The change was not caught by CI/CD checks because the access-control policy unit tests were marked as skipped during the migration window.",
+  "impact_assessment": "Database credentials were exposed for 11 days (2026-04-29 to 2026-05-10). S3 access logs show 3 unrecognised external IPs accessed the bucket during this period. No confirmed data exfiltration has been identified, but the exposure window cannot be ruled out. The affected PostgreSQL cluster holds PII for approximately 42,000 users. Compliance team has been notified; GDPR breach assessment is underway.",
+  "findings": [
+    {
+      "category": "Access Control Misconfiguration",
+      "description": "S3 bucket prod-config-backup was configured with public-read ACL, allowing unauthenticated access to all objects.",
+      "evidence": "AWS S3 GetBucketAcl API response; Terraform state diff from 2026-04-29 migration",
+      "severity": "critical"
+    },
+    {
+      "category": "Credential Storage in Version-Controlled Config",
+      "description": "Plaintext database passwords and API keys were stored directly in configuration files backed up to S3, violating the secrets management policy.",
+      "evidence": "app-config/production.yaml, db-credentials.conf files recovered from bucket",
+      "severity": "high"
+    },
+    {
+      "category": "CI/CD Policy Gap",
+      "description": "S3 bucket policy validation tests were skipped during the migration window and were never re-enabled, allowing the misconfiguration to pass undetected.",
+      "evidence": "CI pipeline logs showing 'skipped' status for access-control-tests job",
+      "severity": "high"
+    },
+    {
+      "category": "Suspicious External Access",
+      "description": "Three external IP addresses not associated with known company infrastructure accessed the bucket during the exposure window.",
+      "evidence": "S3 server access logs 2026-04-29 to 2026-05-10; SIEM correlation report #2026-0511",
+      "severity": "medium"
+    }
+  ],
+  "remediation_steps": [
+    {
+      "action": "Rotate all database credentials and revoke exposed API keys",
+      "owner": "Security Operations",
+      "deadline": "2026-05-10",
+      "status": "completed"
+    },
+    {
+      "action": "Set S3 bucket ACL to private and enable Block Public Access at account level",
+      "owner": "DevOps Team",
+      "deadline": "2026-05-10",
+      "status": "completed"
+    },
+    {
+      "action": "Re-enable and expand CI/CD access-control-tests for all S3 buckets",
+      "owner": "Platform Engineering",
+      "deadline": "2026-05-15",
+      "status": "in-progress"
+    },
+    {
+      "action": "Migrate all secrets from config files to AWS Secrets Manager",
+      "owner": "DevOps Team",
+      "deadline": "2026-05-31",
+      "status": "in-progress"
+    },
+    {
+      "action": "Investigate 3 suspicious IPs and determine extent of unauthorised access",
+      "owner": "Security Operations",
+      "deadline": "2026-05-20",
+      "status": "in-progress"
+    },
+    {
+      "action": "Complete GDPR breach notification assessment and notify DPA if required",
+      "owner": "Compliance & Legal",
+      "deadline": "2026-05-17",
+      "status": "pending"
+    }
+  ],
+  "recommendations": [
+    "Enforce AWS S3 Block Public Access at the organisation level to prevent future accidental public exposure.",
+    "Mandate use of AWS Secrets Manager or HashiCorp Vault for all secrets; prohibit plaintext credentials in config files via pre-commit hooks and CI checks.",
+    "Implement continuous misconfiguration monitoring (e.g., AWS Config rules, Prowler) with real-time alerting to Security Operations.",
+    "Add a post-migration validation checklist that includes access-control verification before marking any infrastructure change as complete.",
+    "Conduct a full audit of all S3 buckets and other storage resources for unintended public access."
+  ],
+  "generated_by": "Alice Chen – Security Operations"
+}
